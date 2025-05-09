@@ -40,6 +40,8 @@ class SeiLogin:
         service.log_path = "chromedriver.log"
         service.log_level = "DEBUG"
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        self.wait = WebDriverWait(self.driver, 240)
+
         self.driver.get("https://sei.antt.gov.br/sip/login.php?sigla_orgao_sistema=ANTT&sigla_sistema=SEI")
         self.root = tk.Tk()
         self.root.withdraw()
@@ -59,26 +61,19 @@ class SeiLogin:
             login_button.click()
 
             # Aguarda a página carregar e verifica se o login foi bem-sucedido
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.ID, "ContentPlaceHolderCorpo_LabelBemVindo"))
+            self.wait.until(
+                EC.presence_of_element_located((By.ID, "divInfraBarraAcesso"))
             )
             self.root.after(0, lambda: messagebox.showinfo("Sucesso", "Login efetuado com sucesso!"))
             return True
         except TimeoutException:
             # Caso o elemento de sucesso não seja encontrado, verifica a mensagem de erro
             try:
-                error_message_element = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "MessageBox_LabelMensagem"))
-                )
-                error_message = error_message_element.text
-                logging.info(f"Mensagem de erro: {error_message}")
-                self.root.after(0, lambda: messagebox.showwarning("Aviso", error_message))
+                self.wait.until(EC.alert_is_present())
+                alert = self.driver.switch_to.alert
                 try:
-                    ok_button = WebDriverWait(self.driver, 10).until(
-                        EC.presence_of_element_located((By.ID, 'MessageBox_ButtonOk'))
-                    )
-                    ok_button.click()
-                    logging.info("Botão ok selecionado com sucesso")
+                    logging.info(f"Texto do alerta: {alert.text}")
+                    alert.accept()
                 except TimeoutException:
                     logging.error("Botão não encontrado dentro do tempo")
 
