@@ -3,7 +3,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import (UnexpectedAlertPresentException, NoAlertPresentException)
 from selenium.webdriver.common.by import By
 import tkinter as tk
 from tkinter import scrolledtext
@@ -46,20 +46,6 @@ class SeiLogin:
         self.root = tk.Tk()
         self.root.withdraw()
 
-    def reiniciar_selenium(self, chromedriver_path, user=None, password=None):
-        try:
-            self.driver.quit()
-            logging.info("Driver fechado com sucesso.")
-        except Exception as e:
-            logging.warning(f"Erro ao fechar o driver: {e}")
-        finally:
-            time.sleep(2)
-            self.driver.delete_all_cookies()
-            novo_sei = SeiLogin(chromedriver_path)
-            novo_sei.driver.get("https://sei.antt.gov.br/")  # Navega para a página de login novamente
-            logging.info("ChromeDriver reiniciado e página de login carregada.")
-            return novo_sei
-    
         # Função para realizar login no sistema SIFAMA
     def login_action(self, user, password):
         try:
@@ -81,37 +67,43 @@ class SeiLogin:
         except Exception as e:
             logging.error(f"Erro durante a execução de login_action: {e}")
             return False
-
+    
     def login(self, user, password):
         logging.info('Acessando o SEI')
+       
+        self.login_action(user, password)
+        time.sleep(3)
+        
         try:
-            self.login_action(user, password)
-            WebDriverWait(self.driver, 240).until(
-                EC.presence_of_element_located((By.XPATH, '/html/body/text'))
+            fatal_error = WebDriverWait(self.driver, 240).until(
+                EC.presence_of_element_located((By.XPATH, "//body[contains(text(), 'Fatal error')]"))
             )
-            logging.error("Erro fatal detectado. Tentando reiniciar o Selenium.")
-            self.driver.get("https://sei.antt.gov.br/")
-            still = WebDriverWait()(self.driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, '/*[id*="txtUsuario"]'))
-
-            )
-            if still.is_displayed():
-                self.driver.get('https://sei.antt.gov.br/')
+            if fatal_error.is_displayed():
+                logging.error("Erro fatal detectado. Recarregando a pagina.")
+                self.driver.get("https://sei.antt.gov.br/")
                 self.driver.refresh()
-                
-            self.root.after(0, lambda: messagebox.showerror("Erro", "Erro ao tentar fazer login."))
-            self.driver.refresh()
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.ID, "ContentPlaceHolderCorpo_LabelBemVindo"))
-            )
-            self.root.after(0, lambda: messagebox.showinfo("Sucesso", "Login efetuado com sucesso após reinício!"))
-            return True
-
-        except Exception as e:
-            logging.error(f"Erro ao tentar fazer login: {e}")
-
-        return False
-
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, '//*[@id="divInfraBarraSistemaPadraoD"]/div[2]'))
+                )
+                logging.info("Login efetuado com sucesso após reinício!")
+                self.root.after(0, lambda: messagebox.showinfo("Sucesso", "Login efetuado com sucesso após reinício!"))
+                return True
+        
+        except UnexpectedAlertPresentException:
+            try:
+                alert = self.driver.switch_to.alert
+                alert_text = alert.text
+                alert.accept()
+                logging.warning(f"Alerta inesperado: {alert_text}. Tentando reiniciar o Selenium.")
+                return False
+            
+            except NoAlertPresentException:
+                user_fild = self.driver.find_element(By.CSS_SELECTOR, '*[id*="txtUsuario"]')
+                self.driver.execute_script("arguments[0].value = '';", user_fild)
+                self.root.after(0, lambda: messagebox.showerror("Login incorreto", f"Verifique o login e a senha."))
+                logging.error("Login ou senha incorretos.")
+                return False         
+               
     def login_window(self):
         # Criação da interface gráfica para entrada de login e senha
         login_window = tk.Toplevel(self.root)
@@ -254,5 +246,5 @@ if __name__ == "__main__":
     sei = SeiLogin(chromedriver_path)
     prompt = PromptWindow(sei.root)
     sei.login_window()
-    #prompt.prompt_window()
+    prompt.prompt_window()
     sei.root.mainloop()
