@@ -16,12 +16,16 @@ import logging
 
 class SeiLogin:
     def __init__(self, chromedriver_path, chrome_options=None):
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s'
+        )
         if not os.path.isfile(chromedriver_path):
             logging.error(f"Chromedriver não encontrado: {chromedriver_path}")
             raise FileNotFoundError("Chromedriver não encontrado.")
         
         # Configurações do ChromeDriver
-        download_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "download_extrato")
+        download_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Download")
 
         prefs = {
             "download.default_directory": download_dir,
@@ -46,6 +50,11 @@ class SeiLogin:
         self.root = tk.Tk()
         self.root.withdraw()
 
+    def wait_for_element(self, element, timer):
+        return WebDriverWait(self.driver, timer).until(
+            EC.presence_of_element_located((By.XPATH, element))
+        )
+        
         # Função para realizar login no sistema SIFAMA
     def login_action(self, user, password):
         try:
@@ -70,25 +79,40 @@ class SeiLogin:
     
     def login(self, user, password):
         logging.info('Acessando o SEI')
-       
+        current_url = self.driver.current_url
         self.login_action(user, password)
         time.sleep(3)
         
+        logging.info(f"URL atual: {current_url}")
         try:
-            fatal_error = WebDriverWait(self.driver, 240).until(
-                EC.presence_of_element_located((By.XPATH, "//body[contains(text(), 'Fatal error')]"))
+            # Aguarda a área principal da tela ou um erro fatal
+            logging.info("Aguardando a área principal da tela ou erro fatal...")
+
+            WebDriverWait(self.driver, 240).until(
+                EC.url_changes(current_url)
             )
-            if fatal_error.is_displayed():
-                logging.error("Erro fatal detectado. Recarregando a pagina.")
-                self.driver.get("https://sei.antt.gov.br/")
-                self.driver.refresh()
-                WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.XPATH, '//*[@id="divInfraBarraSistemaPadraoD"]/div[2]'))
-                )
-                logging.info("Login efetuado com sucesso após reinício!")
-                self.root.after(0, lambda: messagebox.showinfo("Sucesso", "Login efetuado com sucesso após reinício!"))
-                return True
-        
+
+            try:
+                logging.info
+                # Verifica se o login foi bem-sucedido
+                if self.driver.find_element(By.XPATH, '//*[@id="divInfraAreaTela"]').is_displayed():
+                    logging.info("Login efetuado com sucesso!")
+                    self.root.after(0, lambda: messagebox.showinfo("Sucesso", "Login efetuado com sucesso!"))
+                    return True
+
+            except Exception as e:    
+                # Verifica se ocorreu um erro fatal
+                if "Fatal error" in self.driver.page_source:
+                    logging.error("Erro fatal detectado durante o login. Recarregando a página...")
+                    self.driver.get("https://sei.antt.gov.br/")
+                    self.driver.refresh()
+                    WebDriverWait(self.driver, 240).until(
+                        EC.presence_of_element_located((By.XPATH, '//*[@id="divInfraAreaTela"]'))
+                    )
+                    logging.info("Página recarregada com sucesso. Login efetuado!")
+                    self.root.after(0, lambda: messagebox.showinfo("Sucesso", "Login efetuado com sucesso após recarregar a página!"))
+                    return True
+
         except UnexpectedAlertPresentException:
             try:
                 alert = self.driver.switch_to.alert
